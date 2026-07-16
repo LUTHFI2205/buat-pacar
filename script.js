@@ -596,7 +596,7 @@ function initBouquet() {
   CONFIG.BOUQUET_FLOWERS.forEach((flower, i) => {
     const el = document.createElement('div');
     el.className = 'b-flower';
-  el.style.cssText = `
+     el.style.cssText = `
       left: ${flower.x}%; top: ${flower.y}%;
       animation-duration: ${rand(3, 5)}s;
       animation-delay: ${flower.delay}s;
@@ -650,9 +650,329 @@ function spawnHearts(x, y) {
       left: ${x}px; top: ${y}px;
       font-size: ${rand(12, 20)}px;
       pointer-events: none;
-      animation: heartRise ${rand(1, 2)}s ease
-      forwards;
-      function createConfettiRain() {
+      animation: heartRise ${rand(1, 2)}s ease forwards;
+      animation-delay: ${i * 0.1}s;
+      --dx: ${rand(-30, 30)}px;
+    `;
+    container.appendChild(h);
+    setTimeout(() => h.remove(), 2200);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   POLAROID MEMORIES
+   FIX: iOS squashes photos because the photo wrapper has height:160px
+   set via inline style but iOS Safari doesn't always honour it when
+   the element is off-screen or just mounted.  We use a fixed
+   aspect-ratio trick (padding-bottom) instead so height is derived
+   from the rendered width — no explicit pixel height needed.
+════════════════════════════════════════════════════════════════ */
+function initPolaroids() {
+  if (STATE.polaroidInitDone) return;
+  STATE.polaroidInitDone = true;
+
+  const grid = $('polaroid-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  CONFIG.POLAROIDS.forEach((photo, i) => {
+    const el = document.createElement('div');
+    el.className = 'polaroid';
+    const rot = photo.rotate || 0;
+    el.dataset.rotate = rot;
+
+    el.style.cssText = `
+      transform: rotate(${rot}deg) translateY(20px);
+      transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 0.12}s;
+      opacity: 0;
+    `;
+
+    /* FIX: use a padding-bottom aspect-ratio wrapper instead of a
+       fixed pixel height so iOS Safari renders the photo correctly. */
+    let photoContent = '';
+    if (photo.url && photo.url.trim() !== '') {
+      photoContent = `<img src="${photo.url}" alt="${photo.caption}" loading="lazy"
+        style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;border-radius:12px 12px 4px 4px;">`;
+    } else {
+             photoContent = `<div style="position:absolute;top:0;left:0;width:100%;height:100%;
+        background:linear-gradient(135deg,#ffc0d0,#ff96b4);
+        display:flex;align-items:center;justify-content:center;
+        font-size:48px;border-radius:12px 12px 4px 4px;">${photo.emoji || '📷'}</div>`;
+    }
+
+    el.innerHTML = `
+      <div class="polaroid-tape" style="position:absolute;top:-8px;left:20%;width:60px;height:24px;background:rgba(255,245,200,0.8);opacity:0.7;border-radius:2px;transform:rotate(-5deg);"></div>
+      <div class="polaroid-photo" style="position:relative;width:100%;padding-bottom:75%;overflow:hidden;border-radius:12px 12px 4px 4px;">
+        ${photoContent}
+      </div>
+      <div class="polaroid-caption" style="padding:12px;font-size:14px;text-align:center;font-weight:500;">${photo.caption}</div>
+    `;
+
+    el.addEventListener('click', () => openPhotoModal(photo));
+    el.addEventListener('touchend', (e) => { e.preventDefault(); openPhotoModal(photo); });
+    grid.appendChild(el);
+  });
+
+  /* FIX: on iOS the grid may not have final dimensions yet when the
+     observer fires immediately.  Add a small rAF delay after the
+     reveal so the browser has committed layout before we change
+     transform/opacity. */
+  const observer = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          qsa('.polaroid').forEach(p => {
+            const rot = p.dataset.rotate || 0;
+            p.style.opacity = '1';
+            p.style.transform = `rotate(${rot}deg) translateY(0)`;
+          });
+        }, 50);
+      });
+      observer.disconnect();
+    }
+  }, { threshold: 0.1 });
+  observer.observe(grid);
+}
+
+/* ─── PHOTO MODAL ────────────────────────────────────────────── */
+function openPhotoModal(photo) {
+     const modal = $('photo-modal');
+  if (!modal) return;
+  const modalPhoto = $('modal-photo');
+  const modalCaption = $('modal-caption');
+
+  if (modalPhoto) {
+    if (photo.url && photo.url.trim() !== '') {
+      modalPhoto.innerHTML = `<img src="${photo.url}" alt="${photo.caption}"
+        style="width:100%;height:100%;object-fit:cover;display:block;border-radius:8px;">`;
+    } else {
+      modalPhoto.innerHTML = '';
+      modalPhoto.textContent = photo.emoji || '📷';
+    }
+  }
+
+  if (modalCaption) modalCaption.textContent = photo.caption;
+  modal.classList.remove('hidden');
+
+  const backdrop = $('modal-backdrop');
+  const closeBtn = $('modal-close');
+  const closeHandler = () => closePhotoModal();
+  if (backdrop) backdrop.addEventListener('click', closeHandler, { once: true });
+  if (closeBtn) closeBtn.addEventListener('click', closeHandler, { once: true });
+}
+
+function closePhotoModal() {
+  const modal = $('photo-modal');
+  if (!modal) return;
+  const content = modal.querySelector('.modal-content');
+  if (content) content.style.animation = 'modalOut 0.3s ease forwards';
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    if (content) content.style.animation = '';
+  }, 300);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TIMELINE
+════════════════════════════════════════════════════════════════ */
+function initTimeline() {
+  const container = $('timeline-items');
+  if (!container) return;
+  container.innerHTML = '';
+  CONFIG.TIMELINE.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'timeline-item';
+    el.innerHTML = `
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <span class="timeline-emoji">${item.emoji}</span>
+        <div class="timeline-date">${item.date}</div>
+        <h3 class="timeline-title">${item.title}</h3>
+        <p class="timeline-desc">${item.desc}</p>
+      </div>
+    `;
+    container.appendChild(el);
+  });
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('revealed'); });
+  }, { threshold: 0.2 });
+  qsa('.timeline-item').forEach(el => observer.observe(el));
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MUSIC PLAYER
+   FIX: iOS requires a user gesture before any audio can play.
+   The PIN digit taps and gift box tap already call markUserInteraction()
+   which warms up the Audio element.  Here we attempt autoplay and,
+   if it's rejected (iOS before gesture), we set pendingAutoplay=true
+   and show a soft "tap to play" nudge instead of silently failing.
+════════════════════════════════════════════════════════════════ */
+function initMusicPlayer() {
+  const list = $('playlist-list');
+  if (!list) return;
+  list.innerHTML = '';
+  CONFIG.PLAYLIST.forEach((track, i) => {
+    const el = document.createElement('div');
+    el.className = 'playlist-item';
+    el.dataset.index = i;
+    el.innerHTML = `<span class="pl-num">${i + 1}</span><div class="pl-info"><div class="pl-name">${track.name}</div><div class="pl-artist">${track.artist}</div></div><span class="pl-emoji">${track.emoji}</span>`;
+    el.addEventListener('click', () => selectTrack(i));
+    list.appendChild(el);
+  });
+
+  // Reuse the audio element created during markUserInteraction if available
+  if (!STATE.audio) STATE.audio = new Audio();
+  STATE.audio.volume = 0.7;
+  STATE.audio.addEventListener('ended', () => nextTrack());
+  STATE.audio.addEventListener('timeupdate', updateProgress);
+
+  const playBtn = $('ctrl-play');
+  const prevBtn = $('ctrl-prev');
+  const nextBtn = $('ctrl-next');
+  if (playBtn) playBtn.addEventListener('click', togglePlay);
+  if (prevBtn) prevBtn.addEventListener('click', prevTrack);
+  if (nextBtn) nextBtn.addEventListener('click', nextTrack);
+
+  const progBg = qs('.player-progress-bg');
+  if (progBg) progBg.addEventListener('click', (e) => {
+    if (STATE.audio.duration) STATE.audio.currentTime = (e.offsetX / progBg.clientWidth) * STATE.audio.duration;
+  });
+
+  selectTrack(0);
+
+  // FIX: attempt autoplay after a short delay; handle iOS rejection gracefully
+  setTimeout(() => {
+    if (!STATE.isPlaying) attemptAutoplay();
+  }, 1200);
+}
+
+function attemptAutoplay() {
+  if (!STATE.audio || !STATE.audio.src) return;
+  STATE.isPlaying = true;
+  if ($('ctrl-play')) $('ctrl-play').textContent = '⏸';
+
+  const promise = STATE.audio.play();
+  if (promise !== undefined) {
+    promise.catch(() => {
+      // iOS blocked autoplay — reset state and show nudge
+      STATE.isPlaying = false;
+      if ($('ctrl-play')) $('ctrl-play').textContent = '▶';
+      showAutoplayNudge();
+    });
+  }
+}
+
+function showAutoplayNudge() {
+  // Show a gentle "tap ▶ to play music" hint near the player
+  const player = qs('.music-player') || qs('#music-section');
+  if (!player) return;
+  const existing = player.querySelector('.autoplay-nudge');
+  if (existing) return; // already shown
+  const nudge = document.createElement('div');
+  nudge.className = 'autoplay-nudge';
+  nudge.textContent = '🎵 Tap ▶ to play music';
+  nudge.style.cssText = `
+    text-align:center;
+    font-size:13px;
+    color:rgba(180,80,120,0.8);
+    margin-top:8px;
+    animation:fadeInUp 0.4s ease;
+    pointer-events:none;
+  `;
+  player.appendChild(nudge);
+  // Remove nudge once the user manually starts playback
+  STATE.audio.addEventListener('play', () => nudge.remove(), { once: true });
+}
+
+function updateProgress() {
+  if (STATE.audio?.duration) {
+    const pct = (STATE.audio.currentTime / STATE.audio.duration) * 100;
+    if ($('player-progress-fill')) $('player-progress-fill').style.width = pct + '%';
+  }
+}
+
+function selectTrack(i) {
+  STATE.currentTrack = i;
+  const t = CONFIG.PLAYLIST[i];
+  if ($('player-track-name')) $('player-track-name').textContent = t.name;
+  if ($('player-artist')) $('player-artist').textContent = t.artist;
+  if (t.url && STATE.audio) {
+    STATE.audio.src = t.url;
+    STATE.audio.load();
+    if (STATE.isPlaying) STATE.audio.play().catch(() => {});
+  }
+  qsa('.playlist-item').forEach((el, idx) => el.classList.toggle('active', idx === i));
+}
+
+function togglePlay() {
+  STATE.isPlaying = !STATE.isPlaying;
+  if ($('ctrl-play')) $('ctrl-play').textContent = STATE.isPlaying ? '⏸' : '▶';
+  if (STATE.isPlaying && STATE.audio?.src) STATE.audio.play().catch(() => {});
+  else if (STATE.audio) STATE.audio.pause();
+}
+
+function prevTrack() { selectTrack((STATE.currentTrack - 1 + CONFIG.PLAYLIST.length) % CONFIG.PLAYLIST.length); }
+function nextTrack() { selectTrack((STATE.currentTrack + 1) % CONFIG.PLAYLIST.length); }
+function initMusicFloatBtn() { const btn = $('music-float-btn'); if (btn) btn.classList.remove('hidden'); }
+
+/* ════════════════════════════════════════════════════════════════
+   REASONS JAR
+════════════════════════════════════════════════════════════════ */
+function initReasonsJar() {
+     const shakeBtn = $('jar-shake-btn');
+  if (shakeBtn) shakeBtn.addEventListener('click', shakeAndReveal);
+  function shakeAndReveal() {
+    const jar = $('reasons-jar'); if (jar) jar.classList.add('shaking');
+    setTimeout(() => { if (jar) jar.classList.remove('shaking'); }, 600);
+    const allIdx = CONFIG.REASONS.map((_, i) => i).filter(i => !STATE.openedReasons.has(i));
+    if (allIdx.length === 0) STATE.openedReasons.clear();
+    const available = CONFIG.REASONS.map((_, i) => i).filter(i => !STATE.openedReasons.has(i));
+    const idx = available[randInt(0, available.length - 1)];
+    STATE.openedReasons.add(idx);
+    const count = STATE.openedReasons.size;
+    setTimeout(() => { revealReason(idx, count); }, 400);
+  }
+  function revealReason(idx, count) {
+    const note = $('reason-note'); if (!note) return;
+    if ($('note-text')) $('note-text').textContent = CONFIG.REASONS[idx];
+    if ($('note-number')) $('note-number').textContent = `#${count}`;
+    note.classList.remove('hidden');
+    if (count % 5 === 0 || count === 1) launchMiniConfetti();
+  }
+}
+
+function launchMiniConfetti() {
+  for (let i = 0; i < 30; i++) {
+    const c = document.createElement('div');
+    c.style.cssText = `position:fixed;left:${rand(30, 70)}%;top:${rand(40, 60)}%;width:${rand(6, 12)}px;height:${rand(6, 12)}px;background:#FF96B4;border-radius:50%;z-index:9999;pointer-events:none;animation:miniConfetti ${rand(0.8, 1.5)}s ease forwards;`;
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 2000);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FINAL SECTION & FIREWORKS
+════════════════════════════════════════════════════════════════ */
+function initFinalSection() {
+  const btn = $('final-celebrate-btn');
+  if (btn) btn.addEventListener('click', launchCelebration);
+  const observer = new IntersectionObserver(entries => { if (entries[0].isIntersecting) setTimeout(launchCelebration, 1200); }, { threshold: 0.7 });
+  const wish = $('final-wish');
+  if (wish) observer.observe(wish);
+}
+
+let celebrationLaunched = false;
+function launchCelebration() {
+  if (celebrationLaunched) return;
+  celebrationLaunched = true;
+  const overlay = $('fireworks-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  createConfettiRain();
+  const closeBtn = $('celeb-close-btn');
+  if (closeBtn) closeBtn.addEventListener('click', () => { if (overlay) overlay.classList.add('hidden'); celebrationLaunched = false; });
+}
+
+function createConfettiRain() {
   const container = $('celebration-rain');
   if (!container) return;
   for (let i = 0; i < 60; i++) {
